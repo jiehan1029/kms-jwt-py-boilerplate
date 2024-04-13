@@ -15,6 +15,9 @@ from cryptography.hazmat.primitives.asymmetric.utils import (
     encode_dss_signature,
 )
 from cryptography.hazmat.primitives import serialization as crypto_serialization
+from dotenv import load_dotenv
+
+load_dotenv()
 
 DEFAULT_KMS_KEY_ARN = os.environ.get("KMS_KEY_ARN")
 DEFAULT_KMS_REGION = os.environ.get("KMS_REGION")
@@ -23,6 +26,8 @@ default_kms_client = None
 
 def set_up_default_kms_client(region_name: str = DEFAULT_KMS_REGION, **kwargs) -> BaseClient:
     global default_kms_client
+    if default_kms_client:
+        return default_kms_client
     if not region_name:
         raise ValueError("Missing KMS region name!")
     # if your env doesn't have aws profile configured in the env, pass aws access key id and secret to kwargs
@@ -33,7 +38,7 @@ def set_up_default_kms_client(region_name: str = DEFAULT_KMS_REGION, **kwargs) -
 
 def kms_sign_message(message: bytes,
                      signing_algorithm: str = "ECDSA_SHA_256",
-                     kms_client: BaseClient = default_kms_client,
+                     kms_client: BaseClient = set_up_default_kms_client(),
                      kms_key_id: str = DEFAULT_KMS_KEY_ARN,
                      dry_run: bool = False) -> None | bytes:
     if not kms_client:
@@ -49,7 +54,7 @@ def kms_sign_message(message: bytes,
 def kms_verify_signature(
         message: bytes, signature: bytes,
         signing_algorithm: str = "ECDSA_SHA_256",
-        kms_client: BaseClient = default_kms_client,
+        kms_client: BaseClient = set_up_default_kms_client(),
         kms_key_id: str = DEFAULT_KMS_KEY_ARN,
         dry_run: bool = False) -> bool:
     if not kms_client:
@@ -67,7 +72,7 @@ def kms_verify_signature(
     return response["SignatureValid"]
 
 
-def kms_get_public_key(kms_client: BaseClient = default_kms_client, kms_key_id: str = DEFAULT_KMS_KEY_ARN) -> bytes:
+def kms_get_public_key(kms_client: BaseClient = set_up_default_kms_client(), kms_key_id: str = DEFAULT_KMS_KEY_ARN) -> bytes:
     """
     The value from KMS response is a DER-encoded X.509 public key, also known as SubjectPublicKeyInfo (SPKI), as defined in RFC 5280.
     This method converts the DER-encoded X.509 public key to perm key, for example
@@ -143,7 +148,7 @@ def der_to_raw_signature(der_sig, num_bits: int = 256) -> bytes:
 def create_jwt(jwt_payload: dict,
                jwt_alg: str = "ES256",
                kms_key_id: str = DEFAULT_KMS_KEY_ARN,
-               kms_client: BaseClient = default_kms_client) -> str:
+               kms_client: BaseClient = set_up_default_kms_client()) -> str:
     """
     :param jwt_alg: must match signing algorithm used in KMS sign
     :param jwt_payload: example
@@ -179,12 +184,13 @@ def create_jwt(jwt_payload: dict,
 def decode_jwt(jwt_encoded: str,
                jwt_aud: str | None = None,
                kms_verify: bool = True,
-               kms_client: BaseClient = default_kms_client,
+               kms_client: BaseClient = set_up_default_kms_client(),
                kms_key_id: str = DEFAULT_KMS_KEY_ARN) -> dict:
     """
     Verify and then decode a KMS signed JWT.
     :param jwt_encoded: the encoded JWT
-    :param jwt_aud: the audience of the JWT, valid value is one of the "aud" element in JWT header
+    :param jwt_aud: the audience of the JWT, valid value is one of the "aud" element in JWT header.
+        - https://github.com/jpadilla/pyjwt/blob/master/docs/usage.rst#audience-claim-aud
     :param kms_verify: when True, only use KMS verify() method and skip pyjwt signature validation
     :param kms_client: must be valid either from arg or env default
     :param kms_key_id: must be valid either from arg or env default
